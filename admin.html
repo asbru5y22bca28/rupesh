@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Admin — College Voting</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="container">
+    <h2>Admin Panel</h2>
+    <div id="adminInfo"></div>
+
+    <section>
+      <h3>Create Election</h3>
+      <form id="createElection">
+        <label>Title <input name="title" required></label>
+        <label>Description <input name="description"></label>
+        <label>Starts at (ISO) <input name="starts_at" placeholder="YYYY-MM-DDTHH:mm:ssZ" required></label>
+        <label>Ends at (ISO) <input name="ends_at" placeholder="YYYY-MM-DDTHH:mm:ssZ" required></label>
+        <button>Create</button>
+      </form>
+    </section>
+
+    <section>
+      <h3>Add Candidate</h3>
+      <form id="addCandidate">
+        <label>Election ID <input name="election_id" required></label>
+        <label>Name <input name="name" required></label>
+        <label>Manifesto <input name="manifesto"></label>
+        <button>Add</button>
+      </form>
+    </section>
+
+    <section>
+      <h3>View Elections</h3>
+      <button id="loadElections">Load</button>
+      <div id="electionList"></div>
+    </section>
+
+    <p><a href="/">Home</a></p>
+  </main>
+
+  <script>
+    async function fetchMe() {
+      const r = await fetch('/api/me');
+      const j = await r.json();
+      return j.user;
+    }
+
+    async function ensureAdmin() {
+      const user = await fetchMe();
+      if (!user) return window.location = '/login.html';
+      if (!user.is_admin) { alert('Admin access required'); window.location = '/'; }
+      document.getElementById('adminInfo').innerText = `Welcome, ${user.name} (admin)`;
+    }
+
+    document.getElementById('createElection').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = Object.fromEntries(new FormData(e.target));
+      const res = await fetch('/api/admin/create-election', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(fd)
+      });
+      const j = await res.json();
+      alert(j.success ? 'Election created: ' + j.electionId : j.error || 'Error');
+    });
+
+    document.getElementById('addCandidate').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = Object.fromEntries(new FormData(e.target));
+      fd.election_id = Number(fd.election_id);
+      const res = await fetch('/api/admin/add-candidate', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(fd)
+      });
+      const j = await res.json();
+      alert(j.success ? 'Candidate added: ' + j.candidateId : j.error || 'Error');
+    });
+
+    document.getElementById('loadElections').addEventListener('click', async () => {
+      const res = await fetch('/api/admin/elections');
+      const j = await res.json();
+      const el = document.getElementById('electionList');
+      el.innerHTML = '';
+      j.elections.forEach(e => {
+        const d = document.createElement('div');
+        d.className = 'cardLong';
+        d.innerHTML = `<strong>ID ${e.id} - ${e.title}</strong><p>${e.description||''}</p><p>From ${new Date(e.starts_at).toLocaleString()} To ${new Date(e.ends_at).toLocaleString()}</p>
+        <button data-id="${e.id}" class="resBtn">View Results</button>`;
+        el.appendChild(d);
+      });
+      document.querySelectorAll('.resBtn').forEach(b => {
+        b.addEventListener('click', async () => {
+          const id = b.dataset.id;
+          const r = await fetch('/api/election/' + id + '/results');
+          const j = await r.json();
+          if (j.results) {
+            alert('Results:\\n' + j.results.map(r => `${r.name}: ${r.votes}`).join('\\n'));
+          } else {
+            alert(j.error || 'No results');
+          }
+        });
+      });
+    });
+
+    ensureAdmin();
+  </script>
+</body>
+</html>

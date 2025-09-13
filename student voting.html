@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Dashboard — College Voting</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="container">
+    <h2>Dashboard</h2>
+    <div id="userInfo"></div>
+    <div id="elections"></div>
+    <p><button id="logoutBtn">Logout</button></p>
+    <p><a href="/">Home</a></p>
+  </main>
+
+  <script>
+    async function fetchMe() {
+      const r = await fetch('/api/me');
+      const j = await r.json();
+      return j.user;
+    }
+
+    async function load() {
+      const user = await fetchMe();
+      if (!user) {
+        alert('Please login first.');
+        return window.location = '/login.html';
+      }
+      document.getElementById('userInfo').innerText = `Hello, ${user.name} (${user.email})`;
+
+      const res = await fetch('/api/elections/active');
+      const data = await res.json();
+      const container = document.getElementById('elections');
+      if (!data.elections || data.elections.length === 0) {
+        container.innerHTML = '<p>No active elections right now.</p>';
+        return;
+      }
+      container.innerHTML = '';
+      for (const e of data.elections) {
+        const card = document.createElement('div');
+        card.className = 'cardLong';
+        card.innerHTML = `
+          <h3>${e.title}</h3>
+          <p>${e.description || ''}</p>
+          <p>From: ${new Date(e.starts_at).toLocaleString()} To: ${new Date(e.ends_at).toLocaleString()}</p>
+          <button data-id="${e.id}" class="viewBtn">View & Vote</button>
+        `;
+        container.appendChild(card);
+      }
+
+      document.querySelectorAll('.viewBtn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id;
+          const r = await fetch('/api/election/' + id);
+          const j = await r.json();
+          if (j.error) return alert(j.error);
+          showElectionModal(j);
+        });
+      });
+    }
+
+    function showElectionModal(payload) {
+      const { election, candidates, voted } = payload;
+      const html = `
+        <h3>${election.title}</h3>
+        <p>${election.description || ''}</p>
+        <div id="cList">
+          ${candidates.map(c => `
+            <div class="candidate" data-cid="${c.id}">
+              <strong>${c.name}</strong>
+              <p>${c.manifesto || ''}</p>
+              <button class="voteBtn" data-cid="${c.id}" ${voted ? 'disabled' : ''}>Vote</button>
+            </div>`).join('')}
+        </div>
+        ${voted ? '<p><em>You already voted in this election.</em></p>' : ''}
+      `;
+      const win = window.open('', 'vote', 'width=600,height=600');
+      win.document.write('<html><head><link rel="stylesheet" href="/styles.css"></head><body><main class="container">' + html + '</main></body></html>');
+      win.document.close();
+
+      win.document.querySelectorAll('.voteBtn').forEach(b => {
+        b.addEventListener('click', async () => {
+          const candidate_id = b.dataset.cid;
+          if (!confirm('Confirm your vote?')) return;
+          const r = await fetch('/api/election/' + election.id + '/vote', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ candidate_id })
+          });
+          const j = await r.json();
+          if (j.success) {
+            alert('Vote recorded. Thank you!');
+            win.close();
+            load();
+          } else {
+            alert(j.error || 'Could not record vote');
+          }
+        });
+      });
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location = '/login.html';
+    });
+
+    load();
+  </script>
+</body>
+</html>
